@@ -3,9 +3,13 @@ import {
   createMemo,
   createSignal,
   For,
+  Match,
   onCleanup,
   Show,
+  Switch,
 } from "solid-js";
+
+import { Dynamic } from "solid-js/web";
 
 /* ============================================================================
  * MARKDOWN PARSING UTILITIES
@@ -49,6 +53,7 @@ import {
  * @typedef {Object} MdBlock
  * @property {"heading" | "paragraph" | "list" | "code" | "blockquote"} type - The type of markdown block
  * @property {string} text - The text content of the block
+ * @property {string} src - Original source text of the block (optional)
  * @property {number} [level] - For headings: the heading level (1-6)
  * @property {boolean} [ordered] - For lists: whether it's an ordered list
  */
@@ -78,8 +83,8 @@ import {
  * @example
  * const blocks = parseMarkdown("# Hello\n\nThis is a paragraph.");
  * // Returns: [
- * //   { type: "heading", text: "Hello", level: 1 },
- * //   { type: "paragraph", text: "This is a paragraph." }
+ * //   { type: "heading", text: "Hello", level: 1, src: "# Hello" },
+ * //   { type: "paragraph", text: "This is a paragraph.", src: "This is a paragraph." }
  * // ]
  */
 function parseMarkdown(md) {
@@ -102,6 +107,7 @@ function parseMarkdown(md) {
       blocks.push({
         type: "paragraph",
         text: buffer.join(" "),
+        src: buffer.join("\n"),
       });
       buffer.length = 0;
     }
@@ -116,6 +122,7 @@ function parseMarkdown(md) {
       blocks.push({
         type: "code",
         text: codeBuffer.join("\n"),
+        src: codeBuffer.join("\n"),
       });
       codeBuffer.length = 0;
       codeLanguage = "";
@@ -159,6 +166,7 @@ function parseMarkdown(md) {
         type: "heading",
         text: headingMatch[2],
         level: headingMatch[1].length,
+        src: trimmed,
       });
       continue;
     }
@@ -169,6 +177,7 @@ function parseMarkdown(md) {
       blocks.push({
         type: "blockquote",
         text: trimmed.replace(/^>\s*/, ""),
+        src: trimmed,
       });
       continue;
     }
@@ -183,6 +192,7 @@ function parseMarkdown(md) {
         type: "list",
         text: unorderedListMatch?.[1] || orderedListMatch?.[1] || "",
         ordered: !!orderedListMatch,
+        src: trimmed,
       });
       continue;
     }
@@ -200,82 +210,155 @@ function parseMarkdown(md) {
 }
 
 /**
- * Convert markdown blocks to HTML string.
- *
- * Each block is wrapped with a data-block-index attribute for:
- * - TTS synchronization (highlighting current speaking block)
- * - Click-to-speak functionality
- * - Scroll-to-view behavior
- *
- * CURRENT HTML STRUCTURE:
- * - Headings: <h1-6> with dynamic sizing classes
- * - Paragraphs: <p> with prose styling
- * - Lists: Individual <li> elements (not wrapped in <ul>/<ol>)
- * - Code: <pre><code> with syntax-friendly styling
- * - Blockquotes: <blockquote> with left border
- *
- * FUTURE IMPROVEMENTS:
- * - Wrap consecutive list items in proper <ul>/<ol> tags
- * - Add syntax highlighting to code blocks using language hint
- * - Convert inline markdown (bold, italic, links)
- * - Add proper table rendering
- * - Support image tags with <img>
- *
- * @param {MdBlock[]} blocks - Array of parsed markdown blocks
- * @returns {string} HTML string with data-block-index attributes
- *
- * @example
- * const html = blocksToHTML([
- *   { type: "heading", text: "Title", level: 1 },
- *   { type: "paragraph", text: "Content here" }
- * ]);
- * // Returns: '<h1 data-block-index="0" class="heading-1">Title</h1>\n<p data-block-index="1" class="paragraph">Content here</p>'
+ * @param {Object} props
+ * @param {MdBlock[]} props.blocks
+ * @param {number} props.currentIndex
+ * @param {(index: number) => void} props.setCurrentIndex
+ * @param {(index: number) => void} props.speak
  */
-function blocksToHTML(blocks) {
-  return blocks
-    .map((block, index) => {
-      const dataAttr = `data-block-index="${index}"`;
+function BlocksToHTML(props) {
+  //   return blocks
+  //     .map((block, i) => {
+  //       const dataAttr = `data-block-index="${i}"`;
 
-      switch (block.type) {
-        case "heading": {
-          const level = block.level || 1;
-          return `<h${level} ${dataAttr} class="heading-${level}">${escapeHTML(
-            block.text
-          )}</h${level}>`;
-        }
+  //       switch (block.type) {
+  //         case "heading": {
+  //           const level = block.level || 1;
+  //           return `<h${level} ${dataAttr} class="heading-${level}">${escapeHTML(
+  //             block.text
+  //           )}</h${level}>`;
+  //         }
 
-        case "paragraph":
-          return `<p ${dataAttr} class="paragraph">${escapeHTML(
-            block.text
-          )}</p>`;
+  //         case "paragraph":
+  //           return `<p ${dataAttr} class="paragraph">${escapeHTML(
+  //             block.text
+  //           )}</p>`;
 
-        case "list": {
-          // NOTE: Currently renders individual <li> without parent <ul>/<ol>
-          // Future: Group consecutive list items and wrap them properly
-          const listType = block.ordered ? "ol" : "ul";
-          return `<li ${dataAttr} class="list-item" data-list-type="${listType}">${escapeHTML(
-            block.text
-          )}</li>`;
-        }
+  //         case "list": {
+  //           // NOTE: Currently renders individual <li> without parent <ul>/<ol>
+  //           // Future: Group consecutive list items and wrap them properly
+  //           const listType = block.ordered ? "ol" : "ul";
+  //           return `<li ${dataAttr} class="list-item" data-list-type="${listType}">${escapeHTML(
+  //             block.text
+  //           )}</li>`;
+  //         }
 
-        case "code": {
-          // NOTE: Could add syntax highlighting here in the future
-          // Example: Use Prism.js or highlight.js with language from codeLanguage
-          return `<pre ${dataAttr} class="code-block"><code>${escapeHTML(
-            block.text
-          )}</code></pre>`;
-        }
+  //         case "code": {
+  //           // NOTE: Could add syntax highlighting here in the future
+  //           // Example: Use Prism.js or highlight.js with language from codeLanguage
+  //           return `<pre ${dataAttr} class="code-block"><code>${escapeHTML(
+  //             block.text
+  //           )}</code></pre>`;
+  //         }
 
-        case "blockquote":
-          return `<blockquote ${dataAttr} class="blockquote">${escapeHTML(
-            block.text
-          )}</blockquote>`;
+  //         case "blockquote":
+  //           return `<blockquote ${dataAttr} class="blockquote">${escapeHTML(
+  //             block.text
+  //           )}</blockquote>`;
 
-        default:
-          return `<div ${dataAttr}>${escapeHTML(block.text)}</div>`;
-      }
-    })
-    .join("\n");
+  //         default:
+  //           return `<div ${dataAttr}>${escapeHTML(block.text)}</div>`;
+  //       }
+  //     })
+  //     .join("\n");
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: <explanation>
+    <div class="space-y-3" role="list">
+      <For each={props.blocks}>
+        {(block, i) => {
+          return (
+            // biome-ignore lint/a11y/noInteractiveElementToNoninteractiveRole: <explanation>
+            // biome-ignore lint/a11y/useSemanticElements: <explanation>
+            <button
+              type="button"
+              onClick={() => {
+                console.log("🖱️ Block clicked:", i());
+                stop();
+                props.setCurrentIndex(i());
+                props.speak(i());
+              }}
+              class={`w-full text-left px-6 py-4 rounded-xl transition-all duration-200 border-2
+                        ${
+                          i() === props.currentIndex
+                            ? "bg-cyan-500/20 border-cyan-500 shadow-lg shadow-cyan-500/20"
+                            : "bg-slate-800/50 border-slate-700 hover:border-slate-600 hover:bg-slate-800"
+                        }`}
+              role="listitem"
+              aria-current={i() === props.currentIndex ? "true" : undefined}
+              aria-label={`${block.type} block ${i() + 1} of ${
+                props.blocks.length
+              }`}
+            >
+              <Switch>
+                <Match when={block.type === "heading" && block}>
+                  {(block) => {
+                    const Tag = `h${block().level}`;
+                    return (
+                      <Dynamic
+                        component={Tag}
+                        data-block-index={i()}
+                        class={`font-bold text-cyan-400 my-4 ${
+                          block().level === 1
+                            ? "text-3xl"
+                            : block().level === 2
+                            ? "text-2xl"
+                            : block().level === 3
+                            ? "text-xl"
+                            : "text-lg"
+                        }`}
+                      >
+                        {block().text}
+                      </Dynamic>
+                    );
+                  }}
+                </Match>
+                <Match when={block.type === "paragraph" && block}>
+                  {(block) => (
+                    <p
+                      data-block-index={i()}
+                      class="text-slate-300 leading-relaxed my-2"
+                    >
+                      {block().text}
+                    </p>
+                  )}
+                </Match>
+                <Match when={block.type === "list" && block}>
+                  {(block) => (
+                    <li
+                      data-block-index={i()}
+                      class="text-slate-300 ml-6 list-disc marker:text-cyan-400 my-1"
+                    >
+                      {block().text}
+                    </li>
+                  )}
+                </Match>
+                <Match when={block.type === "code" && block}>
+                  {(block) => (
+                    <pre
+                      data-block-index={i()}
+                      class="text-sm bg-slate-900/50 p-4 rounded-lg overflow-x-auto my-2"
+                    >
+                      <code class="text-green-400">{block().text}</code>
+                    </pre>
+                  )}
+                </Match>
+                <Match when={block.type === "blockquote" && block}>
+                  {(block) => (
+                    <blockquote
+                      data-block-index={i()}
+                      class="border-l-4 border-cyan-500 pl-4 italic text-slate-300 my-2"
+                    >
+                      {block().text}
+                    </blockquote>
+                  )}
+                </Match>
+              </Switch>
+            </button>
+          );
+        }}
+      </For>
+    </div>
+  );
 }
 
 /**
@@ -327,16 +410,18 @@ function escapeHTML(text) {
 
 export default function MarkdownReader() {
   const synth = window.speechSynthesis;
+  /** @type {HTMLDivElement|undefined} */
+  let articleEl;
 
   // Markdown textarea state (source of truth)
   const [markdown, setMarkdown] = createSignal("");
   // Parsed blocks from markdown
   const [blocks, setBlocks] = createSignal(/** @type {MdBlock[]} */ ([]));
   const [currentIndex, setCurrentIndex] = createSignal(0);
-  const [isPlaying, setIsPlaying] = createSignal(false);
-  const [isPaused, setIsPaused] = createSignal(false); // NEW: Track paused state
-  const [viewMode, setViewMode] = createSignal(
-    /** @type {"markdown" | "html"} */ ("markdown")
+  //   const [isPlaying, setIsPlaying] = createSignal(false);
+  //   const [isPaused, setIsPaused] = createSignal(false); // NEW: Track paused state
+  const [playState, setPlayState] = createSignal(
+    /** @type {'playing' | 'stopped'} */ ("stopped")
   );
   const [rate, setRate] = createSignal(1);
   const [pitch, setPitch] = createSignal(1);
@@ -346,6 +431,7 @@ export default function MarkdownReader() {
   const [voice, setVoice] = createSignal(
     /** @type {SpeechSynthesisVoice | null} */ (null)
   );
+  const isAtFirstBlock = createMemo(() => currentIndex() === 0);
 
   // Flag to track if playback should continue
   let shouldContinue = true;
@@ -375,55 +461,234 @@ export default function MarkdownReader() {
     console.log("🎬 Voice loading effect triggered");
     loadVoices();
 
-    synth.onvoiceschanged = () => {
+    /** @type {number | null} */
+    let timeout100 = null;
+    /** @type {number | null} */
+    let timeout500 = null;
+    const voicesChangedHandler = () => {
       console.log("🔔 voiceschanged event fired!");
       loadVoices();
 
-      setTimeout(() => {
+      timeout100 = setTimeout(() => {
         if (synth.getVoices().length === 0) {
           console.log("⏳ Retrying voice load after 100ms");
           loadVoices();
         }
       }, 100);
 
-      setTimeout(() => {
+      timeout500 = setTimeout(() => {
         if (synth.getVoices().length === 0) {
           console.log("⏳ Retrying voice load after 500ms");
           loadVoices();
         }
       }, 500);
     };
-  });
+    synth.onvoiceschanged = voicesChangedHandler;
 
-  /* ---------- highlight management ---------- */
-  /**
-   * Auto-scroll highlighted block into view when index changes.
-   * Only applies in HTML view mode.
-   */
-  createEffect(() => {
-    const idx = currentIndex();
-    console.log("🎯 Current index changed to:", idx);
-
-    if (viewMode() === "html") {
-      requestAnimationFrame(() => {
-        const element = document.querySelector(`[data-block-index="${idx}"]`);
-        if (element) {
-          element.scrollIntoView({ behavior: "smooth", block: "center" });
-          console.log("📜 Scrolled to block", idx);
-        }
-      });
-    }
+    onCleanup(() => {
+      // Remove event handler
+      if (synth.onvoiceschanged === voicesChangedHandler) {
+        synth.onvoiceschanged = null;
+      }
+      // Clear timeouts
+      if (timeout100) clearTimeout(timeout100);
+      if (timeout500) clearTimeout(timeout500);
+    });
   });
 
   /* ---------- core speech ---------- */
+
+  /**
+   * Auto-scroll highlighted block into view when index changes.
+   * Only applies in HTML view mode.
+   * @param {number} i - Block index to scroll to
+   */
+  //   function scrollToCurrentBlockIfNotInView(i) {
+  //     console.log("🔍 scrollToCurrentBlock() called for index:", i);
+  //     const blockEl = document.querySelector(`[data-block-index="${i}"]`);
+  //     if (!blockEl) {
+  //       console.warn("⚠️ No block element found for index:", i);
+  //       return;
+  //     }
+
+  //     blockEl.scrollIntoView({ behavior: "smooth", block: "center" });
+  //     console.log("✅ Scrolled to block element:", blockEl);
+  //   }
+  //   function scrollToCurrentBlockIfNotInView(i) {
+  //     console.log("🔍 scrollToCurrentBlock() called for index:", i);
+  //     const blockEl = document.querySelector(`[data-block-index="${i}"]`);
+  //     if (!blockEl || !(blockEl instanceof HTMLElement)) {
+  //       console.warn("⚠️ No block element found for index:", i);
+  //       return;
+  //     }
+
+  //     // Get the scrollable parent (or use the element's offsetParent)
+  //     const scrollParent = blockEl.offsetParent || blockEl.parentElement;
+  //     if (!scrollParent || !(scrollParent instanceof HTMLElement)) {
+  //       console.warn("⚠️ No scrollable parent found for block index:", i);
+  //       return;
+  //     }
+
+  //     // Get block position relative to parent
+  //     const blockRect = blockEl.getBoundingClientRect();
+  //     const parentRect = scrollParent.getBoundingClientRect();
+
+  //     // Calculate how much of the block is visible
+  //     const visibleTop = Math.max(blockRect.top, parentRect.top);
+  //     const visibleBottom = Math.min(blockRect.bottom, parentRect.bottom);
+  //     const visibleHeight = Math.max(0, visibleBottom - visibleTop);
+  //     const blockHeight = blockRect.height;
+
+  //     // Calculate percentage visible
+  //     const percentVisible = (visibleHeight / blockHeight) * 100;
+
+  //     console.log(`📊 Block visibility: ${percentVisible.toFixed(1)}%`);
+
+  //     // Only scroll if less than 50% is visible
+  //     if (percentVisible < 50) {
+  //       blockEl.scrollIntoView({ behavior: "smooth", block: "center" });
+  //       console.log("✅ Scrolled to block element (was mostly hidden)");
+  //     } else {
+  //       console.log("⏭️ Block already sufficiently visible, skipping scroll");
+  //     }
+  //   }
+  /**
+   * Auto-scroll highlighted block into view when index changes.
+   * Only scrolls if most of the block (>50%) is outside the visible area.
+   * Only applies in HTML view mode.
+   * @param {number} i - Block index to scroll to
+   */
+  function scrollToCurrentBlockIfNotInView(i) {
+    console.log("🔍 scrollToCurrentBlock() called for index:", i);
+    const blockEl = document.querySelector(`[data-block-index="${i}"]`);
+    if (!blockEl || !(blockEl instanceof HTMLElement)) {
+      console.warn("⚠️ No block element found for index:", i);
+      return;
+    }
+
+    // Use articleEl as the scrollable parent container
+    const scrollParent = articleEl;
+    if (!scrollParent || !(scrollParent instanceof HTMLElement)) {
+      console.warn("⚠️ No articleEl found for scrolling");
+      return;
+    }
+
+    // Check if at least 30% of articleEl is visible in viewport
+    const parentRect = scrollParent.getBoundingClientRect();
+    const viewportHeight =
+      window.innerHeight || document.documentElement.clientHeight;
+    const visibleParentTop = Math.max(parentRect.top, 0);
+    const visibleParentBottom = Math.min(parentRect.bottom, viewportHeight);
+    const visibleParentHeight = Math.max(
+      0,
+      visibleParentBottom - visibleParentTop
+    );
+    const parentHeight = parentRect.height;
+    const parentPercentVisible = (visibleParentHeight / parentHeight) * 100;
+
+    console.log(`📊 articleEl visibility: ${parentPercentVisible.toFixed(1)}%`);
+    if (parentPercentVisible < 30) {
+      console.log("⏭️ articleEl is mostly out of view, skipping block scroll");
+      return;
+    }
+
+    // Synchronous visibility check using getBoundingClientRect
+    const blockRect = blockEl.getBoundingClientRect();
+
+    const visibleTop = Math.max(blockRect.top, parentRect.top);
+    const visibleBottom = Math.min(blockRect.bottom, parentRect.bottom);
+    const visibleHeight = Math.max(0, visibleBottom - visibleTop);
+    const blockHeight = blockRect.height;
+    const percentVisible = (visibleHeight / blockHeight) * 100;
+
+    console.log(`📊 Block visibility: ${percentVisible.toFixed(1)}%`);
+    // Only scroll if less than 50% is visible
+    if (percentVisible < 50) {
+      blockEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      console.log("✅ Scrolled to block element (was mostly hidden)");
+    } else {
+      console.log("⏭️ Block already sufficiently visible, skipping scroll");
+    }
+  }
+
+  /**
+   * Speak a single block and continue to the next if shouldContinue is true.
+   *
+   * @param {MdBlock[]} list - List of blocks to speak
+   * @param {number} i - Current block index
+   */
+  function speakBlock(list, i) {
+    scrollToCurrentBlockIfNotInView(i);
+    console.log("🗣️ speakBlock called for index:", i);
+
+    if (i >= list.length) {
+      console.log("✅ Finished speaking all blocks");
+      setPlayState("stopped");
+      shouldContinue = false;
+      return;
+    }
+
+    const u = new SpeechSynthesisUtterance(list[i].text);
+    console.log(
+      "📝 Created utterance for:",
+      `${list[i].text.substring(0, 50)}...`
+    );
+
+    u.rate = rate();
+    u.pitch = pitch();
+    const currentVoice = voice();
+    if (currentVoice) {
+      u.voice = currentVoice;
+      console.log("🎤 Using voice:", currentVoice.name);
+    } else {
+      console.warn("⚠️ No voice selected!");
+    }
+
+    u.onstart = () => {
+      console.log("▶️ Started speaking block", i);
+      setCurrentIndex(i);
+    };
+
+    u.onend = () => {
+      console.log("⏹️ Finished speaking block", i);
+      // Only continue if we haven't been stopped/paused
+      if (shouldContinue) {
+        speakBlock(list, i + 1);
+      }
+    };
+
+    u.onerror = (e) => {
+      console.error("❌ Speech error on block", i);
+      console.error("Error details:", {
+        error: e.error,
+        message:
+          "message" in e && typeof e.message === "string" ? e.message : e,
+        charIndex: e.charIndex,
+        elapsedTime: e.elapsedTime,
+      });
+      synth.cancel();
+      setPlayState("stopped");
+      shouldContinue = false;
+    };
+
+    console.log("📢 Calling synth.speak()");
+    synth.speak(u);
+    console.log(
+      "✓ synth.speak() called - speaking:",
+      synth.speaking,
+      "pending:",
+      synth.pending
+    );
+  }
   /**
    * Start speaking from a specific block index.
    * Recursively speaks each block until the end or until stopped.
    *
-   * @param {number} index - Block index to start from
+   * @param {MdBlock[]} list - List of blocks to speak
+   * @param {number} i - Block index to start from
    */
-  function speakFrom(index) {
-    console.log("🎯 speakFrom called with index:", index);
+  function speakFrom(list, i) {
+    console.log("🎯 speakFrom called with index:", i);
     console.log("📚 Total blocks:", blocks().length);
 
     if (!blocks().length) {
@@ -434,94 +699,22 @@ export default function MarkdownReader() {
     console.log("🛑 Cancelling previous speech");
     synth.cancel();
     shouldContinue = true; // Reset flag when starting new playback
-    setIsPlaying(true);
-    setIsPaused(false);
-    setCurrentIndex(index);
+    setPlayState("playing");
+    setCurrentIndex(i);
 
-    const list = blocks();
-
-    /**
-     * Speak a single block and continue to the next if shouldContinue is true.
-     *
-     * @param {number} i - Current block index
-     */
-    function speakBlock(i) {
-      console.log("🗣️ speakBlock called for index:", i);
-
-      if (i >= list.length) {
-        console.log("✅ Finished speaking all blocks");
-        setIsPlaying(false);
-        setIsPaused(false);
-        shouldContinue = false;
-        return;
-      }
-
-      const u = new SpeechSynthesisUtterance(list[i].text);
-      console.log(
-        "📝 Created utterance for:",
-        `${list[i].text.substring(0, 50)}...`
-      );
-
-      u.rate = rate();
-      u.pitch = pitch();
-      const currentVoice = voice();
-      if (currentVoice) {
-        u.voice = currentVoice;
-        console.log("🎤 Using voice:", currentVoice.name);
-      } else {
-        console.warn("⚠️ No voice selected!");
-      }
-
-      u.onstart = () => {
-        console.log("▶️ Started speaking block", i);
-        setCurrentIndex(i);
-      };
-
-      u.onend = () => {
-        console.log("⏹️ Finished speaking block", i);
-        // Only continue if we haven't been stopped/paused
-        if (shouldContinue) {
-          speakBlock(i + 1);
-        }
-      };
-
-      u.onerror = (e) => {
-        console.error("❌ Speech error on block", i);
-        console.error("Error details:", {
-          error: e.error,
-          message:
-            "message" in e && typeof e.message === "string" ? e.message : e,
-          charIndex: e.charIndex,
-          elapsedTime: e.elapsedTime,
-        });
-        synth.cancel();
-        setIsPlaying(false);
-        setIsPaused(false);
-        shouldContinue = false;
-      };
-
-      console.log("📢 Calling synth.speak()");
-      synth.speak(u);
-      console.log(
-        "✓ synth.speak() called - speaking:",
-        synth.speaking,
-        "pending:",
-        synth.pending
-      );
-    }
-
-    speakBlock(index);
+    speakBlock(list, i);
   }
 
   /* ---------- public speak API ---------- */
   /**
    * Start or restart speech from current or specified index.
    *
-   * @param {number} [index] - Optional index to speak from
+   * @param {number} [i] - Optional index to speak from
    */
-  function speak(index = currentIndex()) {
-    console.log("🎤 speak() called with index:", index);
-    speakFrom(index);
+  function speak(i = currentIndex()) {
+    console.log("🎤 speak() called with index:", i);
+    const list = blocks();
+    speakFrom(list, i);
   }
 
   /* ---------- transport controls ---------- */
@@ -532,27 +725,17 @@ export default function MarkdownReader() {
    * - Does nothing if already playing
    */
   function play() {
+    if (playState() === "playing") {
+      console.log("▶️ Play clicked but already playing, ignoring");
+      return;
+    }
+
     console.log("▶️ Play clicked");
-    if (!isPlaying() && !isPaused()) {
+    if (playState() !== "playing") {
       speak();
     }
-  }
-
-  /**
-   * PAUSE: Temporarily halt speech (can resume from same position)
-   * - Pauses the current utterance mid-speech
-   * - Can be resumed with resume() to continue from same position
-   * - Sets isPaused flag to true
-   */
-  function pause() {
-    console.log("⏸️ Pause clicked");
-    if (synth.speaking && !synth.paused) {
-      shouldContinue = false; // Don't advance to next block
-      synth.pause();
-      setIsPlaying(false);
-      setIsPaused(true);
-      console.log("⏸️ Speech paused");
-    }
+    setPlayState("playing");
+    shouldContinue = true; // Allow advancing to next blocks
   }
 
   /**
@@ -562,13 +745,32 @@ export default function MarkdownReader() {
    * - Re-enables advancing to next blocks
    */
   function resume() {
+    if (playState() !== "stopped") {
+      console.log("⏯️ Resume clicked but not paused, ignoring");
+      return;
+    }
+
+    shouldContinue = true; // Allow advancing to next blocks again
+    setPlayState("playing");
     console.log("⏯️ Resume clicked");
-    if (synth.paused && isPaused()) {
-      shouldContinue = true; // Allow advancing to next blocks again
+    if (synth.paused) {
       synth.resume();
-      setIsPlaying(true);
-      setIsPaused(false);
       console.log("⏯️ Speech resumed");
+    } else {
+      // play if not paused
+      speak();
+    }
+  }
+
+  function playResumeOrPause() {
+    if (playState() === "playing") {
+      stop();
+    } else if (playState() === "stopped") {
+      if (isAtFirstBlock()) {
+        play();
+      } else {
+        resume();
+      }
     }
   }
 
@@ -580,14 +782,16 @@ export default function MarkdownReader() {
    * - To restart: user must click Play again
    */
   function stop() {
-    console.log("⏹️ Stop clicked");
-    shouldContinue = false; // Don't advance to next block
-    if (synth.speaking || synth.pending) {
-      synth.cancel();
-      setIsPlaying(false);
-      setIsPaused(false);
-      console.log("⏹️ Speech stopped");
+    if (playState() === "stopped") {
+      console.log("⏹️ Stop clicked but already stopped, ignoring");
+      return;
     }
+
+    console.log("⏹️ Stop clicked");
+    synth.cancel();
+    console.log("⏹️ Speech stopped");
+    shouldContinue = false; // Don't advance to next block
+    setPlayState("stopped");
   }
 
   /**
@@ -635,11 +839,12 @@ export default function MarkdownReader() {
     try {
       const text = await file.text();
       console.log("📖 File text loaded, length:", text.length);
+      stop();
       setMarkdown(text); // Set textarea content
       // Parsing will be triggered by effect below
       synth.cancel();
       setCurrentIndex(0);
-      setIsPlaying(false);
+      setPlayState("stopped");
       console.log("✅ File loaded successfully");
     } catch (error) {
       console.error("❌ Error loading file:", error);
@@ -691,8 +896,12 @@ export default function MarkdownReader() {
 
   /* ---------- cleanup ---------- */
   onCleanup(() => {
-    console.log("🧹 Cleaning up - cancelling speech");
+    console.log(
+      "🧹 Cleaning up - cancelling speech and removing event listeners"
+    );
     synth.cancel();
+    // Remove any event listeners or async resources if needed
+    synth.onvoiceschanged = null;
   });
 
   return (
@@ -720,7 +929,10 @@ export default function MarkdownReader() {
             </span>
             <textarea
               value={markdown()}
-              onInput={(e) => setMarkdown(e.target.value)}
+              onInput={(e) => {
+                stop();
+                setMarkdown(e.target.value);
+              }}
               rows={12}
               placeholder="Type or paste markdown here..."
               class="block w-full font-mono text-base bg-slate-900 text-slate-100 border border-slate-700 rounded-lg p-4 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all resize-vertical min-h-[200px]"
@@ -758,47 +970,6 @@ export default function MarkdownReader() {
           </div>
         </section>
 
-        {/* View Mode Toggle */}
-        <Show when={blocks().length > 0}>
-          <section
-            class="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-2xl p-6 sm:p-8 shadow-xl"
-            aria-label="View mode selector"
-          >
-            <h2 class="text-xl font-semibold text-slate-200 mb-4">View Mode</h2>
-            <fieldset
-              class="flex gap-3 max-w-full min-w-full w-full"
-              aria-label="View mode options"
-            >
-              <button
-                type="button"
-                onClick={() => setViewMode("markdown")}
-                class={`flex-1 px-6 py-3 rounded-lg font-medium transition-all duration-200
-                  ${
-                    viewMode() === "markdown"
-                      ? "bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg shadow-cyan-500/30"
-                      : "bg-slate-700 text-slate-300 hover:bg-slate-600"
-                  }`}
-                aria-pressed={viewMode() === "markdown"}
-              >
-                📝 Markdown Blocks
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode("html")}
-                class={`flex-1 px-6 py-3 rounded-lg font-medium transition-all duration-200
-                  ${
-                    viewMode() === "html"
-                      ? "bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg shadow-cyan-500/30"
-                      : "bg-slate-700 text-slate-300 hover:bg-slate-600"
-                  }`}
-                aria-pressed={viewMode() === "html"}
-              >
-                🌐 HTML Preview
-              </button>
-            </fieldset>
-          </section>
-        </Show>
-
         {/* Playback Controls */}
         <section
           class="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-2xl p-6 sm:p-8 shadow-xl space-y-6"
@@ -809,56 +980,61 @@ export default function MarkdownReader() {
           </h2>
 
           <div class="flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={play}
-              disabled={blocks().length === 0 || (isPlaying() && !isPaused())}
-              class="px-4 sm:px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 rounded-lg font-medium
-                hover:from-green-400 hover:to-emerald-500 transition-all duration-200
-                shadow-lg hover:shadow-green-500/30 disabled:opacity-50 disabled:cursor-not-allowed
-                flex items-center gap-2 text-sm sm:text-base"
-              aria-label="Play from current position"
-            >
-              <span aria-hidden="true">▶</span> Play
-            </button>
+            {
+              /**
+               * Combined Play/Resume button
+               *
+               * - If currently paused, shows "Resume" state
+               * - If stopped or not playing, shows "Play" state
+               */
+              <button
+                type="button"
+                onClick={playResumeOrPause}
+                disabled={blocks().length === 0}
+                class={`px-4 sm:px-6 py-3 bg-gradient-to-r transition-all duration-200
+                      shadow-lg hover:shadow-green-500/30 disabled:opacity-50 disabled:cursor-not-allowed
+                      flex items-center gap-2 text-sm sm:text-base rounded-lg ${
+                        playState() === "playing"
+                          ? "from-yellow-500 to-orange-500 hover:from-yellow-400 hover:to-orange-400"
+                          : "from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500"
+                      }`}
+                aria-label={
+                  isAtFirstBlock() && playState() === "stopped"
+                    ? "Play"
+                    : playState() === "playing"
+                    ? "Pause"
+                    : "Resume"
+                }
+              >
+                <span aria-hidden="true">
+                  {isAtFirstBlock() && playState() === "stopped"
+                    ? "▶"
+                    : playState() === "playing"
+                    ? "⏸"
+                    : "⏯"}
+                </span>
+                {isAtFirstBlock() && playState() === "stopped"
+                  ? "Play"
+                  : playState() === "playing"
+                  ? "Pause"
+                  : "Resume"}
+              </button>
+            }
 
             <button
               type="button"
-              onClick={pause}
-              disabled={!isPlaying() || isPaused()}
-              class="px-4 sm:px-6 py-3 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-lg font-medium
-                hover:from-yellow-400 hover:to-orange-400 transition-all duration-200
-                shadow-lg hover:shadow-yellow-500/30 disabled:opacity-50 disabled:cursor-not-allowed
-                flex items-center gap-2 text-sm sm:text-base"
-              aria-label="Pause playback"
+              onClick={() => {
+                setCurrentIndex(0);
+                play();
+              }}
+              disabled={blocks().length === 0}
+              class="px-4 sm:px-6 py-3 bg-gradient-to-r from-red-500 to-pink-500 rounded-lg font-medium
+              hover:from-red-400 hover:to-pink-400 transition-all duration-200
+              shadow-lg hover:shadow-red-500/30 disabled:opacity-50 disabled:cursor-not-allowed
+              flex items-center gap-2 text-sm sm:text-base"
+              aria-label="Reset"
             >
-              <span aria-hidden="true">⏸</span> Pause
-            </button>
-
-            <button
-              type="button"
-              onClick={resume}
-              disabled={!isPaused()}
-              class="px-4 sm:px-6 py-3 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg font-medium
-                hover:from-blue-400 hover:to-indigo-500 transition-all duration-200
-                shadow-lg hover:shadow-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed
-                flex items-center gap-2 text-sm sm:text-base"
-              aria-label="Resume playback"
-            >
-              <span aria-hidden="true">⏯</span> Resume
-            </button>
-
-            <button
-              type="button"
-              onClick={stop}
-              disabled={!isPlaying() && !isPaused()}
-              class="px-4 sm:px-6 py-3 bg-gradient-to-r from-red-500 to-pink-600 rounded-lg font-medium
-                hover:from-red-400 hover:to-pink-500 transition-all duration-200
-                shadow-lg hover:shadow-red-500/30
-                flex items-center gap-2 text-sm sm:text-base"
-              aria-label="Stop playback"
-            >
-              <span aria-hidden="true">⏹</span> Stop
+              <span aria-hidden="true">⭯</span> Reset
             </button>
 
             <button
@@ -1067,87 +1243,11 @@ export default function MarkdownReader() {
 
         {/* Content Display */}
         <Show when={blocks().length > 0}>
-          <section
-            class="space-y-4"
-            aria-label={
-              viewMode() === "markdown" ? "Markdown blocks" : "HTML preview"
-            }
-          >
-            <h2 class="text-xl font-semibold text-slate-200">
-              {viewMode() === "markdown" ? "Document Blocks" : "HTML Preview"}
-            </h2>
-
-            <Show when={viewMode() === "markdown"}>
-              {/** biome-ignore lint/a11y/useSemanticElements: <explanation> */}
-              <div class="space-y-3" role="list">
-                <For each={blocks()}>
-                  {(block, i) => (
-                    // biome-ignore lint/a11y/noInteractiveElementToNoninteractiveRole: false positive
-                    // biome-ignore lint/a11y/useSemanticElements: false positive
-                    <button
-                      type="button"
-                      onClick={() => {
-                        console.log("🖱️ Block clicked:", i());
-                        stop();
-                        setCurrentIndex(i());
-                        speak(i());
-                      }}
-                      class={`w-full text-left px-6 py-4 rounded-xl transition-all duration-200 border-2
-                        ${
-                          i() === currentIndex()
-                            ? "bg-cyan-500/20 border-cyan-500 shadow-lg shadow-cyan-500/20"
-                            : "bg-slate-800/50 border-slate-700 hover:border-slate-600 hover:bg-slate-800"
-                        }`}
-                      role="listitem"
-                      aria-current={i() === currentIndex() ? "true" : undefined}
-                      aria-label={`${block.type} block ${i() + 1} of ${
-                        blocks().length
-                      }`}
-                    >
-                      <Show when={block.type === "heading"}>
-                        <h3
-                          class={`font-bold text-cyan-400 ${
-                            block.level === 1
-                              ? "text-3xl"
-                              : block.level === 2
-                              ? "text-2xl"
-                              : block.level === 3
-                              ? "text-xl"
-                              : "text-lg"
-                          }`}
-                        >
-                          {block.text}
-                        </h3>
-                      </Show>
-                      <Show when={block.type === "paragraph"}>
-                        <p class="text-slate-300 leading-relaxed">
-                          {block.text}
-                        </p>
-                      </Show>
-                      <Show when={block.type === "list"}>
-                        <li class="text-slate-300 ml-6 list-disc marker:text-cyan-400">
-                          {block.text}
-                        </li>
-                      </Show>
-                      <Show when={block.type === "code"}>
-                        <pre class="text-sm bg-slate-900/50 p-4 rounded-lg overflow-x-auto">
-                          <code class="text-green-400">{block.text}</code>
-                        </pre>
-                      </Show>
-                      <Show when={block.type === "blockquote"}>
-                        <blockquote class="border-l-4 border-cyan-500 pl-4 italic text-slate-300">
-                          {block.text}
-                        </blockquote>
-                      </Show>
-                    </button>
-                  )}
-                </For>
-              </div>
-            </Show>
-
-            <Show when={viewMode() === "html"}>
-              <article
-                class="bg-white text-gray-900 rounded-xl p-6 sm:p-8 lg:p-12 shadow-xl prose prose-slate max-w-none
+          <section class="space-y-4" aria-label="HTML preview">
+            <h2 class="text-xl font-semibold text-slate-200">HTML Preview</h2>
+            <article
+              ref={articleEl}
+              class="rounded-xl p-6 sm:p-8 lg:p-12 shadow-xl prose prose-slate max-w-none
                   prose-headings:text-gray-900 prose-headings:font-bold
                   prose-h1:text-4xl prose-h2:text-3xl prose-h3:text-2xl
                   prose-p:text-gray-700 prose-p:leading-relaxed
@@ -1155,9 +1255,15 @@ export default function MarkdownReader() {
                   prose-code:bg-gray-100 prose-code:px-2 prose-code:py-1 prose-code:rounded
                   prose-pre:bg-gray-900 prose-pre:text-green-400
                   prose-blockquote:border-l-4 prose-blockquote:border-cyan-500 prose-blockquote:italic"
-                innerHTML={blocksToHTML(blocks())}
+            >
+              <BlocksToHTML
+                blocks={blocks()}
+                currentIndex={currentIndex()}
+                setCurrentIndex={setCurrentIndex}
+                speak={speak}
               />
-              <style>{`
+            </article>
+            <style>{`
                 [data-block-index] {
                   transition: all 0.3s ease;
                   padding: 1rem;
@@ -1185,7 +1291,6 @@ export default function MarkdownReader() {
                   }
                 }
               `}</style>
-            </Show>
           </section>
         </Show>
 
