@@ -324,10 +324,13 @@ function escapeHTML(text) {
  *
  * @returns {import('solid-js').JSX.Element}
  */
+
 export default function MarkdownReader() {
   const synth = window.speechSynthesis;
 
-  /* ---------- state ---------- */
+  // Markdown textarea state (source of truth)
+  const [markdown, setMarkdown] = createSignal("");
+  // Parsed blocks from markdown
   const [blocks, setBlocks] = createSignal(/** @type {MdBlock[]} */ ([]));
   const [currentIndex, setCurrentIndex] = createSignal(0);
   const [isPlaying, setIsPlaying] = createSignal(false);
@@ -613,12 +616,6 @@ export default function MarkdownReader() {
   /**
    * Load and parse a markdown file.
    *
-   * PROCESS:
-   * 1. Read file as text
-   * 2. Parse markdown into blocks using parseMarkdown()
-   * 3. Store blocks in state for rendering and TTS
-   * 4. Reset playback state
-   *
    * @param {File} file - The markdown file to load
    */
   async function loadFile(file) {
@@ -638,19 +635,9 @@ export default function MarkdownReader() {
     try {
       const text = await file.text();
       console.log("📖 File text loaded, length:", text.length);
-      console.log("First 200 chars:", text.substring(0, 200));
-
-      // Parse markdown into structured blocks
-      const parsed = parseMarkdown(text);
-      console.log("🔧 Parsed into", parsed.length, "blocks");
-      parsed.forEach((block, i) => {
-        console.log(
-          `  Block ${i}: ${block.type} - ${block.text.substring(0, 50)}...`
-        );
-      });
-
+      setMarkdown(text); // Set textarea content
+      // Parsing will be triggered by effect below
       synth.cancel();
-      setBlocks(parsed);
       setCurrentIndex(0);
       setIsPlaying(false);
       console.log("✅ File loaded successfully");
@@ -658,6 +645,13 @@ export default function MarkdownReader() {
       console.error("❌ Error loading file:", error);
     }
   }
+
+  // Parse markdown whenever textarea changes
+  createEffect(() => {
+    const md = markdown();
+    const parsed = parseMarkdown(md);
+    setBlocks(parsed);
+  });
 
   /* ---------- utility functions ---------- */
   // Generate a color from the voice name (hash to hex)
@@ -710,42 +704,58 @@ export default function MarkdownReader() {
             Markdown Speech Reader
           </h1>
           <p class="text-slate-400 text-base sm:text-lg">
-            Upload a markdown file and let it speak to you with highlighted text
+            Edit markdown in the textarea or upload a file, then preview and
+            listen with highlighting
           </p>
         </header>
 
-        {/* File Upload Section */}
+        {/* Markdown Editor Section */}
         <section
           class="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-2xl p-6 sm:p-8 shadow-xl"
-          aria-label="File upload"
+          aria-label="Markdown editor"
         >
-          <label class="block">
+          <label class="block w-full">
             <span class="text-sm font-medium text-slate-300 mb-3 block">
-              Choose Markdown File
+              Markdown Editor
             </span>
-            <input
-              type="file"
-              accept=".md,.markdown,.txt"
-              onChange={(e) => {
-                const target = e.target;
-                if (!(target instanceof HTMLInputElement)) return;
-                const file = target.files?.[0];
-                if (!file) return;
-                loadFile(file);
-                target.value = "";
-              }}
-              class="block w-full text-sm text-slate-400
-                file:mr-4 file:py-3 file:px-6
-                file:rounded-lg file:border-0
-                file:text-sm file:font-semibold
-                file:bg-gradient-to-r file:from-cyan-500 file:to-blue-600
-                file:text-white
-                file:cursor-pointer file:transition-all file:duration-200
-                hover:file:from-cyan-400 hover:file:to-blue-500
-                cursor-pointer"
-              aria-label="Upload markdown file"
+            <textarea
+              value={markdown()}
+              onInput={(e) => setMarkdown(e.target.value)}
+              rows={12}
+              placeholder="Type or paste markdown here..."
+              class="block w-full font-mono text-base bg-slate-900 text-slate-100 border border-slate-700 rounded-lg p-4 focus:outline-none focus:ring-2 focus:ring-cyan-500 transition-all resize-vertical min-h-[200px]"
+              aria-label="Markdown editor textarea"
             />
           </label>
+          <div class="mt-4 flex items-center gap-4">
+            <label class="block">
+              <span class="text-xs font-medium text-slate-400 mb-1 block">
+                Or load from file
+              </span>
+              <input
+                type="file"
+                accept=".md,.markdown,.txt"
+                onChange={(e) => {
+                  const target = e.target;
+                  if (!(target instanceof HTMLInputElement)) return;
+                  const file = target.files?.[0];
+                  if (!file) return;
+                  loadFile(file);
+                  target.value = "";
+                }}
+                class="block text-sm text-slate-400
+                  file:mr-4 file:py-2 file:px-4
+                  file:rounded-lg file:border-0
+                  file:text-sm file:font-semibold
+                  file:bg-gradient-to-r file:from-cyan-500 file:to-blue-600
+                  file:text-white
+                  file:cursor-pointer file:transition-all file:duration-200
+                  hover:file:from-cyan-400 hover:file:to-blue-500
+                  cursor-pointer"
+                aria-label="Upload markdown file"
+              />
+            </label>
+          </div>
         </section>
 
         {/* View Mode Toggle */}
