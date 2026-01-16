@@ -450,7 +450,10 @@ export default function MarkdownReader() {
       console.log("✅ First voice:", v[0]?.name);
       setVoices(v.sort((a, b) => a.name.localeCompare(b.name)));
       if (!voice()) {
-        const defaultVoice = v.find((x) => x.default) || v[0];
+        const defaultVoice =
+          v.find((x) => x.default || x.name === "English (America)+Hugo") ||
+          v[0];
+
         console.log("🎤 Setting default voice:", defaultVoice?.name);
         setVoice(defaultVoice);
       }
@@ -905,11 +908,11 @@ export default function MarkdownReader() {
   });
 
   return (
-    <div class="grow bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white w-full flex flex-col justify-start items-center">
+    <div class="grow bg-linear-to-br from-slate-900 via-slate-800 to-slate-900 text-white w-full flex flex-col justify-start items-center">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-12 space-y-8 lg:space-y-10">
         {/* Header */}
         <header class="text-center space-y-3 px-4">
-          <h1 class="text-4xl sm:text-5xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
+          <h1 class="text-4xl sm:text-5xl font-bold bg-linear-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
             Markdown Speech Reader
           </h1>
           <p class="text-slate-400 text-base sm:text-lg">
@@ -959,7 +962,7 @@ export default function MarkdownReader() {
                   file:mr-4 file:py-2 file:px-4
                   file:rounded-lg file:border-0
                   file:text-sm file:font-semibold
-                  file:bg-gradient-to-r file:from-cyan-500 file:to-blue-600
+                  file:bg-linear-to-r file:from-cyan-500 file:to-blue-600
                   file:text-white
                   file:cursor-pointer file:transition-all file:duration-200
                   hover:file:from-cyan-400 hover:file:to-blue-500
@@ -981,17 +984,11 @@ export default function MarkdownReader() {
 
           <div class="flex flex-wrap gap-3">
             {
-              /**
-               * Combined Play/Resume button
-               *
-               * - If currently paused, shows "Resume" state
-               * - If stopped or not playing, shows "Play" state
-               */
               <button
                 type="button"
                 onClick={playResumeOrPause}
                 disabled={blocks().length === 0}
-                class={`px-4 sm:px-6 py-3 bg-gradient-to-r transition-all duration-200
+                class={`px-4 sm:px-6 py-3 bg-linear-to-r transition-all duration-200
                       shadow-lg hover:shadow-green-500/30 disabled:opacity-50 disabled:cursor-not-allowed
                       flex items-center gap-2 text-sm sm:text-base rounded-lg ${
                         playState() === "playing"
@@ -1028,7 +1025,7 @@ export default function MarkdownReader() {
                 play();
               }}
               disabled={blocks().length === 0}
-              class="px-4 sm:px-6 py-3 bg-gradient-to-r from-red-500 to-pink-500 rounded-lg font-medium
+              class="px-4 sm:px-6 py-3 bg-linear-to-r from-red-500 to-pink-500 rounded-lg font-medium
               hover:from-red-400 hover:to-pink-400 transition-all duration-200
               shadow-lg hover:shadow-red-500/30 disabled:opacity-50 disabled:cursor-not-allowed
               flex items-center gap-2 text-sm sm:text-base"
@@ -1174,6 +1171,7 @@ export default function MarkdownReader() {
            focus:outline-none focus:ring-2 focus:ring-cyan-500 hover:border-slate-500 
            transition-all cursor-pointer p-0" /* p-0 because button handles padding */
                     aria-label="Select voice"
+                    value={voice()?.name ?? ""}
                   >
                     {/* 1. The Custom Button: Contains the display logic */}
                     <button
@@ -1211,9 +1209,12 @@ export default function MarkdownReader() {
                         );
 
                         return (
-                          <option class="flex items-center gap-3 px-4 py-2 bg-slate-700 text-white hover:bg-slate-600 transition-colors">
+                          <option
+                            class="flex items-center gap-3 px-4 py-2 bg-slate-700 text-white hover:bg-slate-600 transition-colors"
+                            value={v.name}
+                          >
                             <div
-                              class="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center"
+                              class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center"
                               style={{
                                 "background-color": bgColor(),
                                 color: textColor(),
